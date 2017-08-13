@@ -60,7 +60,7 @@ string toBase64(const vector<u8>& bytes)
                      (bytes[i+1] & 0b11110000) >> 4];
         ret += table[(bytes[i+1] & 0b00001111) << 2];
         ret += '=';
-    } 
+    }
     return ret;
 }
 
@@ -85,7 +85,7 @@ vector<u8> fromBase64(string b64)
         64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64
     };
     b64.erase(remove_if(b64.begin(), b64.end(), [](char c) { return c == '\n'; }), b64.end());
-    if (b64.size() % 4 != 0) 
+    if (b64.size() % 4 != 0)
         throw invalid_argument("Invalid base64 input length");
     for (size_t i = 0; i < b64.size(); ++i) {
         if (table[b64[i]] < 64)
@@ -117,7 +117,7 @@ vector<u8> fromBase64(string b64)
                       ((table[b64[i+1]] & 0b00110000) >> 4));
         ret.push_back(((table[b64[i+1]] & 0b00001111) << 4) |
                       ((table[b64[i+2]] & 0b00111100) >> 2));
-    } else { 
+    } else {
         ret.push_back(((table[b64[i]]   & 0b00111111) << 2) |
                       ((table[b64[i+1]] & 0b00110000) >> 4));
         ret.push_back(((table[b64[i+1]] & 0b00001111) << 4) |
@@ -181,7 +181,7 @@ string ask_pass(bool confirm) {
 }
 
 vector<u8> hash_password(const string& password, const string& salt) {
-    if (salt.size() < 8) { 
+    if (salt.size() < 8) {
         throw invalid_argument{"salt too small"};
     };
     vector<u8> hash;
@@ -196,12 +196,29 @@ vector<u8> hash_password(const string& password, const string& salt) {
                    3,                            // iterations
                    reinterpret_cast<const u8*>(&password[0]), password.size(),
                    reinterpret_cast<const u8*>(&salt[0]), salt.size(),
-                   0, 0, 
+                   0, 0,
                    0, 0);
     return hash;
 }
 
-vector<u8> encrypt(const vector<u8>& input, const vector<u8>& hash) {
+vector<u8> encrypt(vector<u8> input, u64 padded_length, const vector<u8>& hash) {
+    if (padded_length == 0) {
+        padded_length = input.size();
+    } else if (padded_length < input.size()) {
+        throw invalid_argument{"Padded length is smaller than input"};
+    }
+    input.resize(padded_length + 8, 0);
+    {
+        auto size = input.size();
+        input[size - 8] = static_cast<u8>((padded_length & 0x00000000000000FF));
+        input[size - 7] = static_cast<u8>((padded_length & 0x000000000000FF00) >> 8);
+        input[size - 6] = static_cast<u8>((padded_length & 0x0000000000FF0000) >> 16);
+        input[size - 5] = static_cast<u8>((padded_length & 0x00000000FF000000) >> 24);
+        input[size - 4] = static_cast<u8>((padded_length & 0x000000FF00000000) >> 32);
+        input[size - 3] = static_cast<u8>((padded_length & 0x0000FF0000000000) >> 40);
+        input[size - 2] = static_cast<u8>((padded_length & 0x00FF000000000000) >> 48);
+        input[size - 1] = static_cast<u8>((padded_length & 0xFF00000000000000) >> 56);
+    }
     vector<u8> output;
     output.resize(24 + 16 + input.size());
 
@@ -232,9 +249,21 @@ vector<u8> decrypt(const vector<u8>& input, const vector<u8>& hash) {
                            hash.data(),
                            input.data(),      // nonce
                            input.data() + 24, // mac
-                           input.data() + 24 + 16, encrypted_size)) 
+                           input.data() + 24 + 16, encrypted_size))
     {
         throw invalid_argument{"Couldn't decrypt, invalid password?"};
+    }
+    {
+        auto size = output.size();
+        u64 original_size = static_cast<u64>(output[size - 8]) |
+                        static_cast<u64>(output[size - 7]) << 8 |
+                        static_cast<u64>(output[size - 6]) << 16 |
+                        static_cast<u64>(output[size - 5]) << 24 |
+                        static_cast<u64>(output[size - 4]) << 32 |
+                        static_cast<u64>(output[size - 3]) << 40 |
+                        static_cast<u64>(output[size - 2]) << 48 |
+                        static_cast<u64>(output[size - 1]) << 56;
+        output.resize(original_size);
     }
     return output;
 }
@@ -249,8 +278,9 @@ int main(int argc, char** argv) {
         if (op == "encrypt") {
             auto password = ask_pass(true);
             auto input = read_from_stdin<vector<u8>>();
-            auto encrypted = encrypt(input, hash_password(password, salt));
-            if (base64) { 
+            auto padded_length = 32;
+            auto encrypted = encrypt(input, padded_length, hash_password(password, salt));
+            if (base64) {
                 cout << toBase64(encrypted) << endl;
             } else {
                 copy_n(reinterpret_cast<u8*>(encrypted.data()), encrypted.size(), ostreambuf_iterator<char>(cout));
