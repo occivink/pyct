@@ -1,6 +1,17 @@
 debug ?= yes
 static ?= no
 
+ifeq ($(debug),yes)
+    suffix := .debug
+else
+    ifeq ($(debug),no)
+        CXXFLAGS += -O3
+        suffix := .opt
+    else
+        $(error debug should be either yes or no)
+    endif
+endif
+
 sources := $(sort $(wildcard *.cpp))
 objects := $(addprefix ., $(sources:.cpp=$(suffix).o))
 deps := $(addprefix ., $(sources:.cpp=$(suffix).d))
@@ -29,13 +40,7 @@ distclean: clean
 	rm -f pyct pyct$(suffix)
 
 installdirs:
-	install -d $(bindir) \
-		$(sharedir)/rc/base \
-		$(sharedir)/rc/core \
-		$(sharedir)/rc/extra \
-		$(sharedir)/colors \
-		$(docdir)/manpages \
-		$(mandir)
+	install -d $(bindir)
 
 install: pyct man doc installdirs
 	install -m 0755 pyct $(bindir)
