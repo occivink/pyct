@@ -1,0 +1,35 @@
+#!/bin/sh
+if [ "$1" = list ]; then
+    grep -E -v '^.{108}$' ~/.passwords
+    exit 0
+fi
+print=0
+if [ "$1" = show ]; then
+    for i in $(cat ~/.passwords); do
+        if [ $print -eq 1 ]; then
+            echo $i | ./pyct dec -b
+            exit $?
+        elif [ "$i" = "$2" ]; then
+            print=1
+        fi
+    done
+fi
+if [ "$1" = copy ]; then
+    for i in $(cat ~/.passwords); do
+        if [ $print -eq 1 ]; then
+            pass=$(echo $i | ./pyct dec -b)
+            if [ $? -ne 0 ]; then 
+                exit 1
+            fi
+            printf "%s" "$pass" | xsel -b
+            exit 0
+        elif [ "$i" = "$2" ]; then
+            print=1
+        fi
+    done
+fi
+if [ "$1" = generate ]; then
+    cat /dev/urandom | tr -dc _A-Z-a-z-0-9 | head -c 20; echo
+    exit 0
+fi
+exit 1

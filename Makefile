@@ -21,7 +21,7 @@ DESTDIR ?= # root dir
 
 bindir := $(DESTDIR)$(PREFIX)/bin
 
-CXXFLAGS += -pedantic -std=c++14 -g -Wall -Wextra
+CXXFLAGS += -pedantic -std=c++17 -g -Wall -Wextra
 
 all : pyct
 
@@ -44,6 +44,7 @@ installdirs:
 
 install: pyct man doc installdirs
 	install -m 0755 pyct $(bindir)
+	install -m 0755 passes $(bindir)
 
 .PHONY: check TAGS clean distclean installdirs install install-strip uninstall
 .PHONY: tags test man doc pyct
