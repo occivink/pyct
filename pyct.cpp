@@ -3,6 +3,7 @@
 #include <string>
 #include <array>
 #include <random>
+#include <optional>
 #include <algorithm>
 #include <termios.h>
 
@@ -151,7 +152,7 @@ T read_from_stdin() {
 string ask_pass(bool confirm) {
     FILE* in;
     FILE* out;
-    out = in = fopen("/dev/tty", "w+ce");
+    out = in = fopen("/dev/tty", "w+");
     auto close = on_scope_end([in] { fclose(in); });
 
     // literally caveman-tier shit
@@ -192,12 +193,10 @@ vector<u8> hash_password(const string& password, const string& salt) {
     work_area.resize(1024*kilobytes);
 
     crypto_argon2i(hash.data(), hash.size(),
-                   work_area.data(), kilobytes,  // memory usage
-                   3,                            // iterations
+                   work_area.data(), kilobytes, // memory usage
+                   3,                           // iterations
                    reinterpret_cast<const u8*>(&password[0]), password.size(),
-                   reinterpret_cast<const u8*>(&salt[0]), salt.size(),
-                   0, 0,
-                   0, 0);
+                   reinterpret_cast<const u8*>(&salt[0]), salt.size());
     return hash;
 }
 
@@ -255,41 +254,113 @@ vector<u8> decrypt(const vector<u8>& input, const vector<u8>& hash) {
     }
     {
         auto size = output.size();
-        u64 original_size = static_cast<u64>(output[size - 8]) |
-                        static_cast<u64>(output[size - 7]) << 8 |
-                        static_cast<u64>(output[size - 6]) << 16 |
-                        static_cast<u64>(output[size - 5]) << 24 |
-                        static_cast<u64>(output[size - 4]) << 32 |
-                        static_cast<u64>(output[size - 3]) << 40 |
-                        static_cast<u64>(output[size - 2]) << 48 |
-                        static_cast<u64>(output[size - 1]) << 56;
+        u64 original_size = static_cast<u64>(output[size - 8])       |
+                            static_cast<u64>(output[size - 7]) << 8  |
+                            static_cast<u64>(output[size - 6]) << 16 |
+                            static_cast<u64>(output[size - 5]) << 24 |
+                            static_cast<u64>(output[size - 4]) << 32 |
+                            static_cast<u64>(output[size - 3]) << 40 |
+                            static_cast<u64>(output[size - 2]) << 48 |
+                            static_cast<u64>(output[size - 1]) << 56;
         output.resize(original_size);
     }
     return output;
 }
 
+struct Args {
+    enum class Operation {
+        Encrypt,
+        Decrypt,
+        Hash
+    } operation;
+    bool base64;
+    optional<string> password;
+    optional<vector<u8>> hash;
+    optional<string> salt;
+    optional<uint64_t> padded_length;
+};
+
+Args parse_args(int argc, char** argv) {
+    argc--;
+    argv++;
+    Args args;
+    args.base64 = false;
+    if (argc == 0)
+        throw invalid_argument{"Missing operation"};
+    string op(argv[0]);
+    if (string("encrypt").substr(0, op.size()) == op)
+        args.operation = Args::Operation::Encrypt;
+    else if (string("decrypt").substr(0, op.size()) == op)
+        args.operation = Args::Operation::Decrypt;
+    else if (string("hash").substr(0, op.size()) == op)
+        args.operation = Args::Operation::Hash;
+    else
+        throw invalid_argument{"Invalid operation"};
+
+    auto option_value = [argc, argv](int i) {
+        if (i >= argc)
+            throw invalid_argument{"Missing option value"};
+        return string(argv[i]);
+    };
+    for (int i = 1; i < argc; ++i) {
+        string arg(argv[i]);
+        if (arg == "-b" || arg == "--base64") {
+            args.base64 = true;
+        } else if (arg == "-h" || arg == "--hash") {
+            args.hash = fromBase64(option_value(++i));
+            if (args.hash->size() != 32) {
+                throw invalid_argument{"Hash is not the correct size"};
+            }
+        } else if (arg == "-s" || arg == "--salt") {
+            args.salt = option_value(++i);
+            if (args.salt->size() < 8) {
+                throw invalid_argument{"Salt is too small"};
+            }
+        } else if (arg == "-l" || arg == "--padded-length") {
+            args.padded_length = stoull(option_value(++i));
+        } else {
+            throw invalid_argument{"Unrecognized argument"};
+        }
+    }
+    if (args.salt.has_value() && args.hash.has_value()) {
+        throw invalid_argument{"Cannot provide both hash and salt"};
+    } else if (args.operation != Args::Operation::Encrypt && args.padded_length.has_value()) {
+        throw invalid_argument{"Can only pad when encrypting"};
+    }
+    return args;
+}
+
 int main(int argc, char** argv) {
-    string salt = "abcdefgh";
-
-    bool base64 = true;
-
-    string op(argv[1]);
     try {
-        if (op == "encrypt") {
-            auto password = ask_pass(true);
-            auto input = read_from_stdin<vector<u8>>();
-            auto padded_length = 32;
-            auto encrypted = encrypt(input, padded_length, hash_password(password, salt));
-            if (base64) {
+        const auto args = parse_args(argc, argv);
+        auto get_hash = [&args](bool confirm) {
+            vector<u8> hash;
+            if (args.hash.has_value()) {
+                return args.hash.value();
+            } else {
+                string password = ask_pass(confirm);
+                const auto salt = args.salt.value_or("abcdefgh");
+                return hash_password(password, salt);
+            }
+        };
+
+        if (args.operation == Args::Operation::Encrypt) {
+            const auto input = read_from_stdin<vector<u8>>();
+            const auto hash = get_hash(true);
+            const auto padded_length = args.padded_length.value_or(0);
+            const auto encrypted = encrypt(input, padded_length, hash);
+            if (args.base64) {
                 cout << toBase64(encrypted) << endl;
             } else {
-                copy_n(reinterpret_cast<u8*>(encrypted.data()), encrypted.size(), ostreambuf_iterator<char>(cout));
+                copy_n(reinterpret_cast<const u8*>(encrypted.data()), encrypted.size(), ostreambuf_iterator<char>(cout));
             }
-        } else if (op == "decrypt") {
-            auto password = ask_pass(false);
-            auto input = base64 ? fromBase64(read_from_stdin<string>()) : read_from_stdin<vector<u8>>();
-            auto decrypted = decrypt(input, hash_password(password, salt));
-            copy_n(reinterpret_cast<u8*>(decrypted.data()), decrypted.size(), ostreambuf_iterator<char>(cout));
+        } else if (args.operation == Args::Operation::Decrypt) {
+            const auto hash = get_hash(false);
+            const auto input = args.base64 ? fromBase64(read_from_stdin<string>()) : read_from_stdin<vector<u8>>();
+            const auto decrypted = decrypt(input, hash);
+            copy_n(reinterpret_cast<const u8*>(decrypted.data()), decrypted.size(), ostreambuf_iterator<char>(cout));
+        } else if (args.operation == Args::Operation::Hash) {
+            cout << toBase64(get_hash(true)) << endl;
         }
     } catch (const std::exception& e) {
         cerr << e.what() << endl;
