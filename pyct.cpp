@@ -25,7 +25,8 @@ private:
     T m_func;
 };
 
-string to_base_64(const vector<u8>& bytes)
+template<typename T>
+string to_base_64(const T& bytes)
 {
     static const array<char, 64> table = {
         'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
@@ -175,7 +176,7 @@ string ask_pass(bool confirm) {
     return pass;
 }
 
-vector<u8> hash_password(const string& password, const string& salt) {
+array<u8, 32> hash_password(const string& password, const string& salt) {
     if (salt.size() < 8)
         throw invalid_argument{"salt too small"};
 
@@ -183,7 +184,7 @@ vector<u8> hash_password(const string& password, const string& salt) {
     vector<u8> work_area(1024*kilobytes);
     u32 iterations = 10;
 
-    vector<u8> hash(32);
+    array<u8, 32> hash;
     crypto_argon2i(hash.data(), hash.size(),
                    work_area.data(), kilobytes,
                    iterations,
@@ -192,7 +193,7 @@ vector<u8> hash_password(const string& password, const string& salt) {
     return hash;
 }
 
-vector<u8> encrypt(vector<u8> input, const optional<u64>& pad_to, const vector<u8>& hash) {
+vector<u8> encrypt(vector<u8> input, const optional<u64>& pad_to, const array<u8, 32>& hash) {
     if (pad_to and *pad_to < input.size())
         throw invalid_argument{"Padded length is smaller than input"};
     u64 real_length = input.size();
@@ -235,7 +236,7 @@ vector<u8> encrypt(vector<u8> input, const optional<u64>& pad_to, const vector<u
     return input;
 }
 
-vector<u8> decrypt(vector<u8> input, const vector<u8>& hash) {
+vector<u8> decrypt(vector<u8> input, const array<u8, 32>& hash) {
     if (input.size() < (8 + 16 + 24))
         throw invalid_argument{"Not enought data"};
     size_t message_length = input.size() - 24 - 16;
@@ -271,7 +272,7 @@ struct Args {
     } operation;
     bool base64 = false;
     optional<string> password;
-    optional<vector<u8>> hash;
+    optional<array<u8, 32>> hash;
     optional<string> salt;
     optional<uint64_t> padded_length;
 };
@@ -305,9 +306,11 @@ Args parse_args(int argc, char** argv) {
         if (arg == "-b" or arg == "--base64") {
             args.base64 = true;
         } else if (arg == "-h" or arg == "--hash") {
-            args.hash = from_base_64(option_value(++i));
-            if (args.hash->size() != 32)
+            auto hash = from_base_64(option_value(++i));
+            if (hash.size() != 32)
                 throw invalid_argument{"Hash is not the correct size"};
+            args.hash.emplace();
+            std::copy(hash.begin(), hash.end(), args.hash->begin());
         } else if (arg == "-s" or arg == "--salt") {
             args.salt = option_value(++i);
             if (args.salt->size() < 8)
@@ -329,9 +332,8 @@ int main(int argc, char** argv) {
     try {
         const auto args = parse_args(argc, argv);
         auto get_hash = [&args](bool confirm) {
-            vector<u8> hash;
             if (args.hash) {
-                return args.hash.value();
+                return *args.hash;
             } else {
                 string password = ask_pass(confirm);
                 const auto salt = args.salt.value_or("86627104");
