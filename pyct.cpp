@@ -34,7 +34,8 @@ string to_base_64(const T& bytes)
         '0','1','2','3','4','5','6','7','8','9','+','-'
     };
     string ret;
-    //ret.reserve(bytes.size() * 4 / 3);
+    auto s = byes.size()
+    ret.reserve(4 * (s / 3 + (s % 3 > 0 ? 1 : 0)));
     size_t i = 0;
     if (bytes.size() >= 3) {
         for (; i <= bytes.size() - 3; i += 3) {
@@ -95,7 +96,7 @@ vector<u8> from_base_64(string b64)
     }
 
     vector<u8> ret;
-    //ret.reserve();
+    ret.reserve(b64.size() / 4 * 3);
     size_t i = 0;
     if (b64.size() >= 4) {
         for (; i < b64.size() - 4; i += 4) {
