@@ -6,6 +6,7 @@
 #include <optional>
 #include <algorithm>
 #include <termios.h>
+#include <unistd.h>
 
 #include "monocypher.h"
 
@@ -34,7 +35,7 @@ string to_base_64(const T& bytes)
         '0','1','2','3','4','5','6','7','8','9','+','-'
     };
     string ret;
-    auto s = byes.size()
+    auto s = bytes.size();
     ret.reserve(4 * (s / 3 + (s % 3 > 0 ? 1 : 0)));
     size_t i = 0;
     if (bytes.size() >= 3) {
@@ -203,6 +204,7 @@ vector<u8> encrypt(vector<u8> input, const optional<u64>& pad_to, const array<u8
 
     // allocate space for the padded message, its size, the mac and the nonce
     input.resize(padded_length +                   8 +       16 +        24);
+    // the padding is unitialized data but that's fine
 
     u8* message_data = input.data();
     u8* size_data = message_data + padded_length;
@@ -285,14 +287,14 @@ Args parse_args(int argc, char** argv) {
     if (argc == 0)
         throw invalid_argument{"Missing operation"};
     string op(argv[0]);
-    const auto starts_with = [](const string& h, const string& n) {
-        return n.size() <= h.size() && equal(n.begin(), n.end(), h.begin());
+    const auto is_prefix = [](const string& pre, const string& s) {
+        return pre.size() <= s.size() && equal(pre.begin(), pre.end(), s.begin());
     };
-    if (starts_with("encrypt", op))
+    if (is_prefix(op, "encrypt"))
         args.operation = Args::Operation::Encrypt;
-    else if (starts_with("decrypt", op))
+    else if (is_prefix(op, "decrypt"))
         args.operation = Args::Operation::Decrypt;
-    else if (starts_with("hash", op))
+    else if (is_prefix(op, "hash"))
         args.operation = Args::Operation::Hash;
     else
         throw invalid_argument{"Invalid operation"};
