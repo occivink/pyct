@@ -129,18 +129,24 @@ vector<u8> from_base_64(string b64)
 }
 
 template<typename T>
-T read_from_stdin() {
+T read_from_stdin(int fd) {
     T data;
     size_t old_size = 0;
     size_t new_size = 32;
     while (true) {
         data.resize(new_size);
-        cin.read(reinterpret_cast<char*>(&data[old_size]), new_size - old_size);
-        if (cin.bad())
-            throw runtime_error{"It's fucked"};
-        if (cin.eof()) {
-            data.resize(old_size + cin.gcount());
-            return data;
+        size_t left_to_read = new_size - old_size;
+        size_t already_read = 0;
+        while (left_to_read > 0) {
+            auto just_read = read(fd, data.data() + old_size + already_read, left_to_read);
+            if (just_read < 0 || (size_t)just_read > left_to_read)
+                throw std::runtime_error{"I/O error"};
+            else if (just_read == 0) {
+                data.resize(old_size + already_read);
+                return data;
+            }
+            left_to_read -= just_read;
+            already_read += just_read;
         }
         old_size = new_size;
         new_size *= 2;
@@ -308,12 +314,21 @@ Args parse_args(int argc, char** argv) {
         string arg(argv[i]);
         if (arg == "-b" or arg == "--base64") {
             args.base64 = true;
-        } else if (arg == "-h" or arg == "--hash") {
-            auto hash = from_base_64(option_value(++i));
+        } else if (arg == "-h" or arg == "--hash-fd") {
+            auto fd = stoi(option_value(++i));
+            vector<u8> hash;
+            try {
+                hash = from_base_64(read_from_stdin<string>(fd));
+            } catch(...) {
+                throw invalid_argument{"Invalid hash"};
+            }
             if (hash.size() != 32)
                 throw invalid_argument{"Hash is not the correct size"};
             args.hash.emplace();
             std::copy(hash.begin(), hash.end(), args.hash->begin());
+        } else if (arg == "-p" or arg == "--pass-fd") {
+            auto fd = stoi(option_value(++i));
+            args.password = read_from_stdin<string>(fd);
         } else if (arg == "-s" or arg == "--salt") {
             args.salt = option_value(++i);
             if (args.salt->size() < 8)
@@ -326,6 +341,8 @@ Args parse_args(int argc, char** argv) {
     }
     if (args.salt and args.hash)
         throw invalid_argument{"Cannot provide both hash and salt"};
+    else if (args.password and args.hash)
+        throw invalid_argument{"Cannot provide both password and hash"};
     else if (args.operation != Args::Operation::Encrypt and args.padded_length)
         throw invalid_argument{"Can only pad when encrypting"};
     return args;
@@ -335,18 +352,20 @@ int main(int argc, char** argv) {
     try {
         const auto args = parse_args(argc, argv);
         auto get_hash = [&args](bool confirm) {
-            if (args.hash) {
+            if (args.hash)
                 return *args.hash;
-            } else {
-                string password = ask_pass(confirm);
-                const auto salt = args.salt.value_or("86627104");
-                return hash_password(password, salt);
-            }
+            string password;
+            if (args.password)
+                password =  *args.password;
+            else
+                password = ask_pass(confirm);
+            const auto salt = args.salt.value_or("86627104");
+            return hash_password(password, salt);
         };
 
         if (args.operation == Args::Operation::Encrypt) {
             const auto hash = get_hash(true);
-            auto input = read_from_stdin<vector<u8>>();
+            auto input = read_from_stdin<vector<u8>>(0);
             const auto encrypted = encrypt(move(input), args.padded_length, hash);
             if (args.base64) {
                 cout << to_base_64(encrypted) << endl;
@@ -355,7 +374,7 @@ int main(int argc, char** argv) {
             }
         } else if (args.operation == Args::Operation::Decrypt) {
             const auto hash = get_hash(false);
-            auto input = args.base64 ? from_base_64(read_from_stdin<string>()) : read_from_stdin<vector<u8>>();
+            auto input = args.base64 ? from_base_64(read_from_stdin<string>(0)) : read_from_stdin<vector<u8>>(0);
             const auto decrypted = decrypt(move(input), hash);
             copy_n(reinterpret_cast<const u8*>(decrypted.data()), decrypted.size(), ostreambuf_iterator<char>(cout));
         } else if (args.operation == Args::Operation::Hash) {
