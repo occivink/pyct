@@ -129,7 +129,7 @@ vector<u8> from_base_64(string b64)
 }
 
 template<typename T>
-T read_from_stdin(int fd) {
+T read_from_fd(int fd) {
     T data;
     size_t old_size = 0;
     size_t new_size = 32;
@@ -280,6 +280,7 @@ struct Args {
         Hash
     } operation;
     bool base64 = false;
+    bool interactive = true;
     optional<string> password;
     optional<array<u8, 32>> hash;
     optional<string> salt;
@@ -314,11 +315,13 @@ Args parse_args(int argc, char** argv) {
         string arg(argv[i]);
         if (arg == "-b" or arg == "--base64") {
             args.base64 = true;
+        } else if (arg == "-n" or arg == "--non-interactive") {
+            args.interactive = false;
         } else if (arg == "-h" or arg == "--hash-fd") {
             auto fd = stoi(option_value(++i));
             vector<u8> hash;
             try {
-                hash = from_base_64(read_from_stdin<string>(fd));
+                hash = from_base_64(read_from_fd<string>(fd));
             } catch(...) {
                 throw invalid_argument{"Invalid hash"};
             }
@@ -328,7 +331,7 @@ Args parse_args(int argc, char** argv) {
             std::copy(hash.begin(), hash.end(), args.hash->begin());
         } else if (arg == "-p" or arg == "--pass-fd") {
             auto fd = stoi(option_value(++i));
-            args.password = read_from_stdin<string>(fd);
+            args.password = read_from_fd<string>(fd);
         } else if (arg == "-s" or arg == "--salt") {
             args.salt = option_value(++i);
             if (args.salt->size() < 8)
@@ -357,15 +360,17 @@ int main(int argc, char** argv) {
             string password;
             if (args.password)
                 password =  *args.password;
-            else
+            else if (args.interactive)
                 password = ask_pass(confirm);
+            else
+                throw invalid_argument{"Either hash or password must be provided in non-interactive mode"};
             const auto salt = args.salt.value_or("86627104");
             return hash_password(password, salt);
         };
 
         if (args.operation == Args::Operation::Encrypt) {
             const auto hash = get_hash(true);
-            auto input = read_from_stdin<vector<u8>>(0);
+            auto input = read_from_fd<vector<u8>>(0);
             const auto encrypted = encrypt(move(input), args.padded_length, hash);
             if (args.base64) {
                 cout << to_base_64(encrypted) << endl;
@@ -374,7 +379,7 @@ int main(int argc, char** argv) {
             }
         } else if (args.operation == Args::Operation::Decrypt) {
             const auto hash = get_hash(false);
-            auto input = args.base64 ? from_base_64(read_from_stdin<string>(0)) : read_from_stdin<vector<u8>>(0);
+            auto input = args.base64 ? from_base_64(read_from_fd<string>(0)) : read_from_fd<vector<u8>>(0);
             const auto decrypted = decrypt(move(input), hash);
             copy_n(reinterpret_cast<const u8*>(decrypted.data()), decrypted.size(), ostreambuf_iterator<char>(cout));
         } else if (args.operation == Args::Operation::Hash) {
