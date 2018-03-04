@@ -247,7 +247,7 @@ vector<u8> encrypt(vector<u8> input, const optional<u64>& pad_to, const array<u8
 
 vector<u8> decrypt(vector<u8> input, const array<u8, 32>& hash) {
     if (input.size() < (8 + 16 + 24))
-        throw invalid_argument{"Not enought data"};
+        throw invalid_argument{"Not enough data"};
     size_t message_length = input.size() - 24 - 16;
     u8* message_data = input.data();
     u8* mac_data = message_data + message_length;
@@ -279,6 +279,7 @@ struct Args {
         Decrypt,
         Hash
     } operation;
+    bool help = false;
     bool base64 = false;
     bool interactive = true;
     optional<string> password;
@@ -294,6 +295,10 @@ Args parse_args(int argc, char** argv) {
     if (argc == 0)
         throw invalid_argument{"Missing operation"};
     string op(argv[0]);
+    if (op == "-h" or op == "--help") {
+        args.help = true;
+        return args;
+    }
     const auto is_prefix = [](const string& pre, const string& s) {
         return pre.size() <= s.size() && equal(pre.begin(), pre.end(), s.begin());
     };
@@ -313,11 +318,13 @@ Args parse_args(int argc, char** argv) {
     };
     for (int i = 1; i < argc; ++i) {
         string arg(argv[i]);
-        if (arg == "-b" or arg == "--base64") {
+        if (arg == "-h" or arg == "--help") {
+            args.help = true;
+        } else if (arg == "-b" or arg == "--base-64") {
             args.base64 = true;
         } else if (arg == "-n" or arg == "--non-interactive") {
             args.interactive = false;
-        } else if (arg == "-h" or arg == "--hash-fd") {
+        } else if (arg == "--hash-fd") {
             auto fd = stoi(option_value(++i));
             vector<u8> hash;
             try {
@@ -329,7 +336,7 @@ Args parse_args(int argc, char** argv) {
                 throw invalid_argument{"Hash is not the correct size"};
             args.hash.emplace();
             std::copy(hash.begin(), hash.end(), args.hash->begin());
-        } else if (arg == "-p" or arg == "--pass-fd") {
+        } else if (arg == "--pass-fd") {
             auto fd = stoi(option_value(++i));
             args.password = read_from_fd<string>(fd);
         } else if (arg == "-s" or arg == "--salt") {
@@ -351,9 +358,33 @@ Args parse_args(int argc, char** argv) {
     return args;
 }
 
+void print_help() {
+    cerr << "A symmetric encryption program\n";
+    cerr << "\n";
+    cerr << "USAGE: pyct <SUBCOMMAND> [OPTIONS]\n";
+    cerr << "\n";
+    cerr << "SUBCOMMANDS:\n";
+    cerr << "    encrypt    Encrypts the data passed on standard input\n";
+    cerr << "    decrypt    Decrypts the pyct-encrypted data passed on standard input\n";
+    cerr << "    hash       Prints a hash, for use with later invocations of pyct\n";
+    cerr << "\n";
+    cerr << "OPTIONS:\n";
+    cerr << "    -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64\n";
+    cerr << "        --pass-fd <FD>              Specify a file descriptor from which to read the password\n";
+    cerr << "        --hash-fd <FD>              Specify a file descriptor from which to read the hash\n";
+    cerr << "    -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting\n";
+    cerr << "    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters\n";
+    cerr << "    -n, --non-interactive>          Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
+    cerr << "    -h, --help                      Print this help message\n";
+}
+
 int main(int argc, char** argv) {
     try {
         const auto args = parse_args(argc, argv);
+        if (args.help) {
+            print_help();
+            return 0;
+        }
         auto get_hash = [&args](bool confirm) {
             if (args.hash)
                 return *args.hash;
@@ -383,7 +414,7 @@ int main(int argc, char** argv) {
             const auto decrypted = decrypt(move(input), hash);
             copy_n(reinterpret_cast<const u8*>(decrypted.data()), decrypted.size(), ostreambuf_iterator<char>(cout));
         } else if (args.operation == Args::Operation::Hash) {
-            cout << to_base_64(get_hash(true)) << endl;
+            cout << to_base_64(get_hash(false)) << endl;
         }
     } catch (const exception& e) {
         cerr << e.what() << endl;
