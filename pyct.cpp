@@ -359,14 +359,14 @@ Args parse_args(int argc, char** argv) {
 }
 
 void print_help() {
-    cerr << "A symmetric encryption program\n";
+    cerr << "A symmetric encryption program that uses argon2 password hashing.\n";
     cerr << "\n";
     cerr << "USAGE: pyct <SUBCOMMAND> [OPTIONS]\n";
     cerr << "\n";
     cerr << "SUBCOMMANDS:\n";
     cerr << "    encrypt    Encrypts the data passed on standard input\n";
     cerr << "    decrypt    Decrypts the pyct-encrypted data passed on standard input\n";
-    cerr << "    hash       Prints a hash, for use with later invocations of pyct\n";
+    cerr << "    hash       Prints the hashed password, for use with later invocations of pyct\n";
     cerr << "\n";
     cerr << "OPTIONS:\n";
     cerr << "    -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64\n";

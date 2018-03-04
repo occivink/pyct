@@ -140,7 +140,7 @@ try {
             echo "USAGE: passwords [OPTIONS] <SUBCOMMAND>"
             echo
             echo "OPTIONS:"
-            echo "    -f, --password-file <file>   Use a specific password file [default: ~/.config/passwords]"
+            echo "    -f, --password-file <FILE>   Use a specific password file [default: ~/.config/passwords]"
             echo "    -h, --help                   Print this help message"
             echo
             echo "SUBCOMMANDS:"

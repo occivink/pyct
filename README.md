@@ -1,17 +1,19 @@
+**Warning**: this repo is still in experimental stage. Use the programs here at your own risk, I **will** make compatibility-breaking changes in the beginning.
+
 # Pyct
 
 A simple symmetric encryption program. Comes with a password management script built on top.
 
 * `pyct`: the main program which does symmetric encryption/decryption on standard input.
 ```
-A symmetric encryption program
+A symmetric encryption program that uses argon2 password hashing.
 
 USAGE: pyct <SUBCOMMAND> [OPTIONS]
 
 SUBCOMMANDS:
-    encrypt    encrypts the data passed on standard input
-    decrypt    decrypts the pyct-encrypted data passed on standard input
-    hash       prints a hash, for use with later invocations of pyct
+    encrypt    Encrypts the data passed on standard input
+    decrypt    Decrypts the pyct-encrypted data passed on standard input
+    hash       Prints the hashed password, for use with later invocations of pyct
 
 OPTIONS:
     -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64
@@ -29,7 +31,7 @@ Pyct-based password manager
 USAGE: passwords [OPTIONS] <SUBCOMMAND>
 
 OPTIONS:
-    -f, --password-file <file>   Use a specific password file [default: ~/.config/passwords]
+    -f, --password-file <FILE>   Use a specific password file [default: ~/.config/passwords]
     -h, --help                   Print this help message
 
 SUBCOMMANDS:
@@ -101,7 +103,7 @@ You don't have to, but it should be relatively easy to review the source. You ca
 
 However, while I don't have malicious intent, there is always the possibility that a technical flaw will cause your passwords to be leaked. For that reason, I decline all responsibility if that were to happen to you.
 
-### This is not secure, and your entire reasoning is flawed because of <x>.
+### This is not secure, and your entire reasoning is flawed because of `<x>`.
 
 Then please let me know. I'm far from being a crypto expert, but I don't think I've committed any fundamental mistake.
 
