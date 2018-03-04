@@ -24,7 +24,7 @@ OPTIONS:
     -n, --non-interactive>          Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified
     -h, --help                      Print this help message
 ```
-* `contrib/passwords.elv`: an *elvish* script that uses `pyct` to manage passwords.
+* `contrib/passwords.elv`: an *elvish* script that uses `pyct` to manage a single file containing all passwords.
 ```
 Pyct-based password manager
 
@@ -44,6 +44,68 @@ SUBCOMMANDS:
 
 * `pyct`: A c++17 compiler. Call `make debug=no` and you're good to go. 
 * `contrib/passwords.elv`: the `elvish` shell. Fortunately, it is quite portable.
+
+## Usage
+
+### `pyct`
+
+Encrypt a file:
+```
+# classic unnecessary use of cat
+>cat some_file | pyct encrypt > some_file_encrypted
+# a password prompt appears here
+# decrypt it
+>cat some_file_encrypted | pyct decrypt > some_file_decrypted
+# prompt again, the password must match of course
+# check that they're the same
+>diff some_file some_file_decrypted
+```
+
+Encrypt a message:
+```
+# add some padding to avoid leaking the size of the message
+>a=$(echo "Top secret message" | pyct encrypt --base-64 --padded-length 50)
+# password prompt
+>echo $a
+8SxmXLDtn0dO+4N0vYXi+kFyGa5j6naRDWxI7gyAmhVgC+ZcWYGGrkWuymeORClq-TMoZ6hHjKPNGw+Fdvh1Tr+FlJLRqKjiMblXpcXSrNICoj15lLk3WMx3NDzTbcDBprM=
+>b=$(echo $a | pyct decrypt --base-64)
+# prompt again, the password must match
+>echo $b
+Top secret message
+```
+
+### `passwords`
+
+Note: to perform any of the operations shown below, the "master" password with which the passwords file is encrypted must be entered.
+
+Add entry-password pairs to the password file (auto-created if it doesn't exist):
+```
+# default length of 16, using characters in the A-Za-z0-9_- range
+>passwords generate github.com
+# optionally specify the length and print the generated password
+>passwords generate reddit.com --print --length 20
+lNajl-Oa_a6rPs3+wo9P
+# optionally append some text, in case a website enforces the presence of some characters
+>passwords generate mailbox.org --print --append '/1!'
+hyyMoNfRVq5lx81b/1!
+```
+List all entries in the password file:
+```
+>passwords list
+github.com
+reddit.com
+mailbox.org
+```
+Print the password associated to an entry:
+```
+>passwords show github.com
+E1jzfzErcZztXK-C
+# also does fuzzy matching
+>passwords show -f mail
+hyyMoNfRVq5lx81b/1!
+# copy the password to clipboard
+>passwords show -f reddit | xsel -b
+```
 
 ## FAQ
 
