@@ -3,7 +3,6 @@
 #include <string>
 #include <array>
 #include <random>
-#include <optional>
 #include <algorithm>
 #include <termios.h>
 #include <unistd.h>
@@ -16,6 +15,8 @@ using u8 = uint8_t;
 using u32 = uint32_t;
 using u64 = uint64_t;
 
+using Hash = array<u8, 32>;
+
 template<typename T>
 class OnScopeEnd
 {
@@ -24,6 +25,93 @@ public:
     ~OnScopeEnd() { m_func(); }
 private:
     T m_func;
+};
+
+template<typename T>
+OnScopeEnd<T> on_scope_end(T t) {
+    return OnScopeEnd<T>(move(t));
+}
+
+template<typename T>
+struct Optional
+{
+public:
+    constexpr Optional() : m_valid{false} {}
+    Optional(const T& other) : m_valid{true} { new (&m_value) T(other); }
+    Optional(T&& other) : m_valid{true} { new (&m_value) T(move(other)); }
+
+    Optional(const Optional& other)
+        : m_valid{other.m_valid}
+    {
+        if (m_valid)
+            new (&m_value) T(other.m_value);
+    }
+
+    Optional(Optional&& other)
+        noexcept(noexcept(new (nullptr) T(move(other.m_value))))
+        : m_valid{other.m_valid}
+    {
+        if (m_valid)
+            new (&m_value) T(move(other.m_value));
+    }
+
+    Optional& operator=(const Optional& other)
+    {
+        destruct_ifn();
+        if ((m_valid = other.m_valid))
+            new (&m_value) T(other.m_value);
+        return *this;
+    }
+
+    Optional& operator=(Optional&& other)
+    {
+        destruct_ifn();
+        if ((m_valid = other.m_valid))
+            new (&m_value) T(move(other.m_value));
+        return *this;
+    }
+
+    ~Optional() { destruct_ifn(); }
+
+    constexpr explicit operator bool() const noexcept { return m_valid; }
+
+    bool operator==(const Optional& other) const
+    {
+        return m_valid == other.m_valid and
+               (not m_valid or m_value == other.m_value);
+    }
+
+    bool operator!=(const Optional& other) const { return !(*this == other); }
+
+    template<typename... Args>
+    void emplace(Args&&... args)
+    {
+        destruct_ifn();
+        new (&m_value) T{forward<Args>(args)...};
+        m_valid = true;
+    }
+
+    T& operator*() { return m_value; }
+    const T& operator*() const { return *const_cast<Optional&>(*this); }
+
+    T* operator->() { return &m_value; }
+    const T* operator->() const { return const_cast<Optional&>(*this).operator->(); }
+
+    template<typename U>
+    T value_or(U&& fallback) const { return m_valid ? m_value : T{forward<U>(fallback)}; }
+
+    void reset() { destruct_ifn(); m_valid = false; }
+
+private:
+    void destruct_ifn() { if (m_valid) m_value.~T(); }
+
+    struct Empty {};
+    union
+    {
+        Empty m_empty; // disable default construction of value
+        T m_value;
+    };
+    bool m_valid;
 };
 
 template<typename T>
@@ -138,9 +226,9 @@ T read_from_fd(int fd) {
         size_t left_to_read = new_size - old_size;
         size_t already_read = 0;
         while (left_to_read > 0) {
-            auto just_read = read(fd, data.data() + old_size + already_read, left_to_read);
+            auto just_read = read(fd, &data[old_size + already_read], left_to_read);
             if (just_read < 0 || (size_t)just_read > left_to_read)
-                throw std::runtime_error{"I/O error"};
+                throw runtime_error{"I/O error"};
             else if (just_read == 0) {
                 data.resize(old_size + already_read);
                 return data;
@@ -157,12 +245,12 @@ string ask_pass(bool confirm) {
     FILE* in;
     FILE* out;
     out = in = fopen("/dev/tty", "w+");
-    auto close = OnScopeEnd([in] { fclose(in); });
+    auto close = on_scope_end([in] { fclose(in); });
 
     // literally caveman-tier shit
     termios t;
     tcgetattr(fileno(in), &t);
-    auto show_input = OnScopeEnd([in, t] { tcsetattr(fileno(in), TCSANOW, &t); });
+    auto show_input = on_scope_end([in, t] { tcsetattr(fileno(in), TCSANOW, &t); });
     t.c_lflag &= ~ECHO;
     tcsetattr(fileno(in), TCSANOW, &t);
 
@@ -184,7 +272,7 @@ string ask_pass(bool confirm) {
     return pass;
 }
 
-array<u8, 32> hash_password(const string& password, const string& salt) {
+Hash hash_password(const string& password, const string& salt) {
     if (salt.size() < 8)
         throw invalid_argument{"salt too small"};
 
@@ -192,7 +280,7 @@ array<u8, 32> hash_password(const string& password, const string& salt) {
     vector<u8> work_area(1024*kilobytes);
     u32 iterations = 10;
 
-    array<u8, 32> hash;
+    Hash hash;
     crypto_argon2i(hash.data(), hash.size(),
                    work_area.data(), kilobytes,
                    iterations,
@@ -201,7 +289,7 @@ array<u8, 32> hash_password(const string& password, const string& salt) {
     return hash;
 }
 
-vector<u8> encrypt(vector<u8> input, const optional<u64>& pad_to, const array<u8, 32>& hash) {
+vector<u8> encrypt(vector<u8> input, const Optional<u64>& pad_to, const Hash& hash) {
     if (pad_to and *pad_to < input.size())
         throw invalid_argument{"Padded length is smaller than input"};
     u64 real_length = input.size();
@@ -245,7 +333,7 @@ vector<u8> encrypt(vector<u8> input, const optional<u64>& pad_to, const array<u8
     return input;
 }
 
-vector<u8> decrypt(vector<u8> input, const array<u8, 32>& hash) {
+vector<u8> decrypt(vector<u8> input, const Hash& hash) {
     if (input.size() < (8 + 16 + 24))
         throw invalid_argument{"Not enough data"};
     size_t message_length = input.size() - 24 - 16;
@@ -282,10 +370,10 @@ struct Args {
     bool help = false;
     bool base64 = false;
     bool interactive = true;
-    optional<string> password;
-    optional<array<u8, 32>> hash;
-    optional<string> salt;
-    optional<uint64_t> padded_length;
+    Optional<string> password;
+    Optional<Hash> hash;
+    Optional<string> salt;
+    Optional<uint64_t> padded_length;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -335,7 +423,7 @@ Args parse_args(int argc, char** argv) {
             if (hash.size() != 32)
                 throw invalid_argument{"Hash is not the correct size"};
             args.hash.emplace();
-            std::copy(hash.begin(), hash.end(), args.hash->begin());
+            copy(hash.begin(), hash.end(), args.hash->begin());
         } else if (arg == "--pass-fd") {
             auto fd = stoi(option_value(++i));
             args.password = read_from_fd<string>(fd);
@@ -374,7 +462,7 @@ void print_help() {
     cerr << "        --hash-fd <FD>              Specify a file descriptor from which to read the hash\n";
     cerr << "    -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting\n";
     cerr << "    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters\n";
-    cerr << "    -n, --non-interactive>          Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
+    cerr << "    -n, --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
     cerr << "    -h, --help                      Print this help message\n";
 }
 

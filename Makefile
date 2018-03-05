@@ -21,7 +21,7 @@ DESTDIR ?= # root dir
 
 bindir := $(DESTDIR)$(PREFIX)/bin
 
-CXXFLAGS +=-pedantic -std=c++17 -g -Wall -Wextra
+CXXFLAGS +=-pedantic -std=c++14 -g -Wall -Wextra
 
 all : pyct
 
