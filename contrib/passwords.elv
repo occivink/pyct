@@ -10,7 +10,7 @@ try {
     while ($has-arg) {
         arg=($next-arg)
         if (has-value [-f --password-file] $arg) {
-            if (not $has-arg) { fail missing }
+            if (not $has-arg) { fail missing-arg }
             passwords-file=($next-arg)
         } elif (has-value [-h --help] $arg) {
              fail help
@@ -21,7 +21,8 @@ try {
              fail unrecognized
         }
     }
-    if (eq $mode '') { fail missing }
+    if (eq $mode '') { fail missing-arg }
+    if (and (has-value [list show] $mode) (not ?(test -f $passwords-file))) { fail missing-password-file }
 
     if (eq $mode list) {
         while ($has-arg) {
@@ -54,7 +55,7 @@ try {
                  fail unrecognized
             }
         }
-        if (eq $name '') { fail missing }
+        if (eq $name '') { fail missing-arg }
 
         match=(if $fuzzy {
              fuzzed=(put '' (explode $name) '' | joins '.*')
@@ -81,14 +82,14 @@ try {
         while ($has-arg) {
             arg=($next-arg)
             if (has-value [-l --length] $arg) {
-                 if (not ($has-arg)) { fail missing }
+                 if (not ($has-arg)) { fail missing-arg }
                  length=($next-arg)
                  use re
                  if (not (re:match '[1-9]\d*' $length)) { fail invalid }
             } elif (has-value [-h --help] $arg) {
                  fail help-generate
             } elif (has-value [-a --append] $arg) {
-                 if (not ($has-arg)) { fail missing }
+                 if (not ($has-arg)) { fail missing-arg }
                  append=($next-arg)
             } elif (has-value [-p --print] $arg) {
                  print=$true
@@ -98,7 +99,7 @@ try {
                  fail unrecognized
             }
         }
-        if (eq $name '') { fail missing }
+        if (eq $name '') { fail missing-arg }
 
         hash=(./pyct hash)
         pass=(try { cat /dev/urandom | tr -dc 'A-Za-z0-9-+_' | head -c$length } except _ { })
@@ -106,18 +107,19 @@ try {
         pass=$pass$append
 
         dec=
-        p=(pipe)
-        run-parallel {
-            print $hash > $p
-            pwclose $p
-        } {
-            try {
-                dec=(./pyct decrypt -b --hash-fd 3 < $passwords-file 3< $p 2>/dev/null | slurp)
-            } except _ { fail password } finally { prclose $p }
-        }
-
-        splits "\n" $dec | each [line]{
-            if (eq $name $line) { fail generate-exists }
+        if ?(test -f $passwords-file) {
+            p=(pipe)
+            run-parallel {
+                print $hash > $p
+                pwclose $p
+            } {
+                try {
+                    dec=(./pyct decrypt -b --hash-fd 3 < $passwords-file 3< $p 2>/dev/null | slurp)
+                } except _ { fail password } finally { prclose $p }
+            }
+            splits "\n" $dec | each [line]{
+                if (eq $name $line) { fail generate-exists }
+            }
         }
 
         p=(pipe)
@@ -176,7 +178,8 @@ try {
             reason=[
                 &generate-exists="That entry already exists"
                 &invalid="Invalid argument"
-                &missing="Missing argument"
+                &missing-arg="Missing argument"
+                &missing-password-file="Missing password file"
                 &nomatch="No matching entry found"
                 &password="Incorrect password"
             ]
