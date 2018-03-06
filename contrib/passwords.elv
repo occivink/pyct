@@ -133,7 +133,7 @@ try {
         if $print { print $pass }
     }
 } except e {
-    try {
+    {
         use re
         exception=(re:replace '^\?\(fail (.*)\)$' '$1' (to-string $e))
         if (eq $exception help) {
@@ -186,6 +186,6 @@ try {
             try { echo $reason[$exception] } except _ { echo "Unknown error" }
             exit 1
         }
-    }
+    } >&2
 # dumb trick to avoid huge stack traces when ctrl-c-ing
-} finally { } >&2
+} finally { }
