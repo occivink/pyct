@@ -286,17 +286,23 @@ string ask_pass(bool confirm) {
         fprintf(out, "\n");
         return s;
     };
-    string pass = get_pass("Password:");
-    if (confirm and get_pass("Confirm password:") != pass)
-        throw runtime_error{"Passwords do not match"};
+    auto pass = get_pass("Password:");
+    if (confirm) {
+        auto pass2 = get_pass("Confirm password:");
+        if (pass != pass2)
+            throw runtime_error{"Passwords do not match"};
+        crypto_wipe(&pass2[0], pass2.size());
+    }
     return pass;
 }
 
-Hash hash_password(const string& password, const string& salt, u64 iterations, u64 work_area_size) {
+Hash hash_password(string& password, const string& salt, u64 iterations, u64 work_area_size) {
     if (salt.size() < 8)
         throw invalid_argument{"Salt too small"};
     if (work_area_size < 8*1024)
         throw invalid_argument{"Work area is too small"};
+    if (iterations == 0)
+        throw invalid_argument{"Need at least one iteration"};
 
     auto rem = work_area_size % 1024;
     if (rem > 0)
@@ -311,6 +317,9 @@ Hash hash_password(const string& password, const string& salt, u64 iterations, u
                    iterations,
                    reinterpret_cast<const u8*>(&password[0]), password.size(),
                    reinterpret_cast<const u8*>(&salt[0]), salt.size());
+
+    crypto_wipe(&password[0], password.size());
+    password = {};
     return hash;
 }
 
@@ -471,8 +480,8 @@ Args parse_args(int argc, char** argv) {
             throw invalid_argument{"Unrecognized argument: " + arg};
         }
     }
-    if ((args.salt ? 1 : 0) + (args.hash ? 1 : 0) + (args.password ? 1 : 0) > 1)
-        throw invalid_argument{"Can only provide one of salt, hash and password at once"};
+    if (args.hash and args.password)
+        throw invalid_argument{"Can only provide one of hash and password at once"};
     else if (args.operation != Args::Operation::Encrypt and args.padded_length)
         throw invalid_argument{"Can only pad when encrypting"};
     return args;
@@ -489,10 +498,12 @@ void print_help() {
     cerr << "    hash       Prints the hashed password, for use with later invocations of pyct\n";
     cerr << "\n";
     cerr << "OPTIONS [generic]:\n";
-    cerr << "    -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64\n";
+    cerr << "    -b, --base-64                   When encrypting, produce base64 output\n";
+    cerr << "                                    When decrypting, assumes that the input is base64\n";
     cerr << "    -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting\n";
     cerr << "        --hash-fd <FD>              File descriptor from which to read the hash\n";
-    cerr << "        --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
+    cerr << "        --non-interactive           Do not prompt for password\n";
+    cerr << "                                    Will abort if --pass-fd or --hash-fd is not specified\n";
     cerr << "        --no-confirm                Do not confirm password input\n";
     cerr << "    -h, --help                      Print this help message\n";
     cerr << "OPTIONS [password hashing]:\n";
