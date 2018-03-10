@@ -370,6 +370,7 @@ struct Args {
     bool help = false;
     bool base64 = false;
     bool interactive = true;
+    bool confirm = true;
     Optional<string> password;
     Optional<Hash> hash;
     Optional<string> salt;
@@ -410,8 +411,10 @@ Args parse_args(int argc, char** argv) {
             args.help = true;
         } else if (arg == "-b" or arg == "--base-64") {
             args.base64 = true;
-        } else if (arg == "-n" or arg == "--non-interactive") {
+        } else if (arg == "--non-interactive") {
             args.interactive = false;
+        } else if (arg == "--no-confirm") {
+            args.confirm = false;
         } else if (arg == "--hash-fd") {
             auto fd = stoi(option_value(++i));
             vector<u8> hash;
@@ -434,13 +437,11 @@ Args parse_args(int argc, char** argv) {
         } else if (arg == "-l" or arg == "--padded-length") {
             args.padded_length = stoull(option_value(++i));
         } else {
-            throw invalid_argument{"Unrecognized argument"};
+            throw invalid_argument{"Unrecognized argument: " + arg};
         }
     }
-    if (args.salt and args.hash)
-        throw invalid_argument{"Cannot provide both hash and salt"};
-    else if (args.password and args.hash)
-        throw invalid_argument{"Cannot provide both password and hash"};
+    if ((args.salt ? 1 : 0) + (args.hash ? 1 : 0) + (args.password ? 1 : 0) > 1)
+        throw invalid_argument{"Can only provide one of salt, hash and password at once"};
     else if (args.operation != Args::Operation::Encrypt and args.padded_length)
         throw invalid_argument{"Can only pad when encrypting"};
     return args;
@@ -458,11 +459,12 @@ void print_help() {
     cerr << "\n";
     cerr << "OPTIONS:\n";
     cerr << "    -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64\n";
-    cerr << "        --pass-fd <FD>              Specify a file descriptor from which to read the password\n";
-    cerr << "        --hash-fd <FD>              Specify a file descriptor from which to read the hash\n";
     cerr << "    -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting\n";
     cerr << "    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters\n";
-    cerr << "    -n, --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
+    cerr << "        --pass-fd <FD>              Specify a file descriptor from which to read the password\n";
+    cerr << "        --hash-fd <FD>              Specify a file descriptor from which to read the hash\n";
+    cerr << "    -   --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
+    cerr << "        --no-confirm                Don't confirm password input";
     cerr << "    -h, --help                      Print this help message\n";
 }
 
@@ -488,7 +490,7 @@ int main(int argc, char** argv) {
         };
 
         if (args.operation == Args::Operation::Encrypt) {
-            const auto hash = get_hash(true);
+            const auto hash = get_hash(args.confirm);
             auto input = read_from_fd<vector<u8>>(0);
             const auto encrypted = encrypt(move(input), args.padded_length, hash);
             if (args.base64) {
@@ -502,7 +504,7 @@ int main(int argc, char** argv) {
             const auto decrypted = decrypt(move(input), hash);
             copy_n(reinterpret_cast<const u8*>(decrypted.data()), decrypted.size(), ostreambuf_iterator<char>(cout));
         } else if (args.operation == Args::Operation::Hash) {
-            cout << to_base_64(get_hash(false)) << endl;
+            cout << to_base_64(get_hash(args.confirm)) << endl;
         }
     } catch (const exception& e) {
         cerr << e.what() << endl;
