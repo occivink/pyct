@@ -15,14 +15,18 @@ SUBCOMMANDS:
     decrypt    Decrypts the pyct-encrypted data passed on standard input
     hash       Prints the hashed password, for use with later invocations of pyct
 
-OPTIONS:
+OPTIONS [generic]:
     -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64
-        --pass-fd <FD>              Specify a file descriptor from which to read the password
-        --hash-fd <FD>              Specify a file descriptor from which to read the hash
     -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting
-    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters
-    -n, --non-interactive>          Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified
+        --hash-fd <FD>              File descriptor from which to read the hash
+        --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified
     -h, --help                      Print this help message
+OPTIONS [password hashing]:
+    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters
+        --pass-fd <FD>              File descriptor from which to read the password
+        --work-area-size <SIZE>     Memory used for hashing [default 128M]
+        --iterations <N>            Number of iterations [default 10]
+        --no-confirm                Don't confirm password input
 ```
 * `contrib/passwords.elv`: an *elvish* script that uses `pyct` to manage a single file containing all passwords.
 ```
@@ -42,7 +46,7 @@ SUBCOMMANDS:
 
 ## Prerequisites
 
-* `pyct`: A c++17 compiler. Call `make debug=no` and you're good to go. 
+* `pyct`: A c++14 compiler. Call `make debug=no` and you're good to go. 
 * `contrib/passwords.elv`: the `elvish` shell. Fortunately, it is quite portable.
 
 ## Usage

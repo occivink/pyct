@@ -472,14 +472,14 @@ void print_help() {
     cerr << "    -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64\n";
     cerr << "    -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting\n";
     cerr << "        --hash-fd <FD>              File descriptor from which to read the hash\n";
-    cerr << "    -   --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
+    cerr << "        --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
+    cerr << "        --no-confirm                Do not confirm password input\n";
     cerr << "    -h, --help                      Print this help message\n";
     cerr << "OPTIONS [password hashing]:\n";
     cerr << "    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters\n";
     cerr << "        --pass-fd <FD>              File descriptor from which to read the password\n";
     cerr << "        --work-area-size <SIZE>     Memory used for hashing [default 128M]\n";
     cerr << "        --iterations <N>            Number of iterations [default 10]\n";
-    cerr << "        --no-confirm                Don't confirm password input";
 }
 
 int main(int argc, char** argv) {
