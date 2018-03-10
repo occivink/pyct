@@ -153,7 +153,9 @@ However, note that `pyct` reads the entire input data in memory, meaning that it
 
 ### The encryption takes too much/little time.
 
-Most of the time is spent hashing the password. You can tweak the argon2 parameters in code to make it more or less expensive. Naturally, the same parameters should be used for encryption/decryption. 
+Most of the time is spent hashing the password. You can tweak the argon2 parameters (`--work-area-size` and `--iterations`) to make it more or less expensive. More expensive parameters equate to more brute-force resilience. Naturally, the same parameters should be used for encryption/decryption.
+
+You should use parameters suitable for the least powerful device you will run this on.
 
 ### What's with the hardcoded salt, `86627104`?
 

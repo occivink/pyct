@@ -272,17 +272,22 @@ string ask_pass(bool confirm) {
     return pass;
 }
 
-Hash hash_password(const string& password, const string& salt) {
+Hash hash_password(const string& password, const string& salt, u64 iterations, u64 work_area_size) {
     if (salt.size() < 8)
-        throw invalid_argument{"salt too small"};
+        throw invalid_argument{"Salt too small"};
+    if (work_area_size < 8*1024)
+        throw invalid_argument{"Work area is too small"};
 
-    const size_t kilobytes = 128*1024;
-    vector<u8> work_area(1024*kilobytes);
-    u32 iterations = 10;
+    auto rem = work_area_size % 1024;
+    if (rem > 0)
+        work_area_size = work_area_size - rem + 1024;
+    u64 nb_blocks = work_area_size / 1024;
+
+    vector<u8> work_area(work_area_size);
 
     Hash hash;
     crypto_argon2i(hash.data(), hash.size(),
-                   work_area.data(), kilobytes,
+                   work_area.data(), nb_blocks,
                    iterations,
                    reinterpret_cast<const u8*>(&password[0]), password.size(),
                    reinterpret_cast<const u8*>(&salt[0]), salt.size());
@@ -371,10 +376,12 @@ struct Args {
     bool base64 = false;
     bool interactive = true;
     bool confirm = true;
+    Optional<u64> iterations;
+    Optional<u64> work_area_size;
     Optional<string> password;
     Optional<Hash> hash;
     Optional<string> salt;
-    Optional<uint64_t> padded_length;
+    Optional<u64> padded_length;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -415,6 +422,10 @@ Args parse_args(int argc, char** argv) {
             args.interactive = false;
         } else if (arg == "--no-confirm") {
             args.confirm = false;
+        } else if (arg == "--iterations") {
+            args.iterations = stoi(option_value(++i));
+        } else if (arg == "--work-area-size") {
+            args.work_area_size = stoi(option_value(++i));
         } else if (arg == "--hash-fd") {
             auto fd = stoi(option_value(++i));
             vector<u8> hash;
@@ -457,15 +468,18 @@ void print_help() {
     cerr << "    decrypt    Decrypts the pyct-encrypted data passed on standard input\n";
     cerr << "    hash       Prints the hashed password, for use with later invocations of pyct\n";
     cerr << "\n";
-    cerr << "OPTIONS:\n";
+    cerr << "OPTIONS [generic]:\n";
     cerr << "    -b, --base-64                   When encrypting, produce base64 output. When decrypting, assumes that the input is base64\n";
     cerr << "    -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting\n";
-    cerr << "    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters\n";
-    cerr << "        --pass-fd <FD>              Specify a file descriptor from which to read the password\n";
-    cerr << "        --hash-fd <FD>              Specify a file descriptor from which to read the hash\n";
+    cerr << "        --hash-fd <FD>              File descriptor from which to read the hash\n";
     cerr << "    -   --non-interactive           Do not prompt for password. Will abort if --pass-fd or --hash-fd is not specified\n";
-    cerr << "        --no-confirm                Don't confirm password input";
     cerr << "    -h, --help                      Print this help message\n";
+    cerr << "OPTIONS [password hashing]:\n";
+    cerr << "    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters\n";
+    cerr << "        --pass-fd <FD>              File descriptor from which to read the password\n";
+    cerr << "        --work-area-size <SIZE>     Memory used for hashing [default 128M]\n";
+    cerr << "        --iterations <N>            Number of iterations [default 10]\n";
+    cerr << "        --no-confirm                Don't confirm password input";
 }
 
 int main(int argc, char** argv) {
@@ -486,7 +500,9 @@ int main(int argc, char** argv) {
             else
                 throw invalid_argument{"Either hash or password must be provided in non-interactive mode"};
             const auto salt = args.salt.value_or("86627104");
-            return hash_password(password, salt);
+            return hash_password(password, salt,
+                args.iterations.value_or((u64)10),
+                args.work_area_size.value_or((u64)1024*1024*128));
         };
 
         if (args.operation == Args::Operation::Encrypt) {
