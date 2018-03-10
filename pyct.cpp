@@ -4,6 +4,8 @@
 #include <array>
 #include <random>
 #include <algorithm>
+#include <map>
+#include <regex>
 #include <termios.h>
 #include <unistd.h>
 
@@ -113,6 +115,24 @@ private:
     };
     bool m_valid;
 };
+
+u64 size_to_number(const std::string& s) {
+    static const regex r("(\\d+)(([KkMmGg])B?)?");
+    smatch match;
+    regex_match(s, match, r);
+    if (match.empty())
+        throw invalid_argument{"Invalid size"};
+    u64 res = stoull(match.str(1));
+    if (match.length(2) != 0) {
+        static const map<char, u64> t = {
+            {'K', 1024},
+            {'M', 1024*1024},
+            {'G', 1024*1024*1024},
+        };
+        res *= t.at(toupper(match.str(3)[0]));
+    }
+    return res;
+}
 
 template<typename T>
 string to_base_64(const T& bytes)
@@ -425,7 +445,7 @@ Args parse_args(int argc, char** argv) {
         } else if (arg == "--iterations") {
             args.iterations = stoi(option_value(++i));
         } else if (arg == "--work-area-size") {
-            args.work_area_size = stoi(option_value(++i));
+            args.work_area_size = size_to_number(option_value(++i));
         } else if (arg == "--hash-fd") {
             auto fd = stoi(option_value(++i));
             vector<u8> hash;
@@ -446,7 +466,7 @@ Args parse_args(int argc, char** argv) {
             if (args.salt->size() < 8)
                 throw invalid_argument{"Salt is too small"};
         } else if (arg == "-l" or arg == "--padded-length") {
-            args.padded_length = stoull(option_value(++i));
+            args.padded_length = size_to_number(option_value(++i));
         } else {
             throw invalid_argument{"Unrecognized argument: " + arg};
         }
