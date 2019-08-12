@@ -76,6 +76,7 @@ try {
         if (not $print) { fail nomatch }
     } elif (eq $mode generate) {
         name=
+        pass=
         length=16
         append=
         print=$false
@@ -95,16 +96,20 @@ try {
                  print=$true
             } elif (eq $name '') {
                  name=$arg
+            } elif (eq $pass '') {
+                 pass=$arg
             } else {
                  fail unrecognized
             }
         }
         if (eq $name '') { fail missing-arg }
 
-        hash=(./pyct hash)
-        pass=(try { cat /dev/urandom | tr -dc 'A-Za-z0-9-+_' | head -c$length } except _ { })
-        if (not-eq (count $pass) $length) { fail unknown }
-        pass=$pass$append
+        hash=(./pyct hash --no-confirm)
+        if (eq $pass '') {
+            pass=(try { cat /dev/urandom | tr -dc 'A-Za-z0-9-+_' | head -c$length } except _ { })
+            if (not-eq (count $pass) $length) { fail unknown }
+            pass=$pass$append
+        }
 
         dec=
         if ?(test -f $passwords-file) {
@@ -167,7 +172,7 @@ try {
         } elif (eq $exception help-generate) {
             echo "Generate a random password for the entry specified, and add it to the passwords file"
             echo
-            echo "USAGE: passwords generate [OPTIONS] ENTRY"
+            echo "USAGE: passwords generate [OPTIONS] ENTRY [PASSWORD]"
             echo
             echo "OPTIONS:"
             echo "    -l, --length <LENGTH>    Generate a password of length LENGTH [default: 16]"

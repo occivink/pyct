@@ -4,8 +4,8 @@
 #include <array>
 #include <random>
 #include <algorithm>
-#include <map>
-#include <regex>
+#include <optional>
+
 #include <termios.h>
 #include <unistd.h>
 
@@ -34,104 +34,56 @@ OnScopeEnd<T> on_scope_end(T t) {
     return OnScopeEnd<T>(move(t));
 }
 
-template<typename T>
-struct Optional
-{
-public:
-    constexpr Optional() : m_valid{false} {}
-    Optional(const T& other) : m_valid{true} { new (&m_value) T(other); }
-    Optional(T&& other) : m_valid{true} { new (&m_value) T(move(other)); }
-
-    Optional(const Optional& other)
-        : m_valid{other.m_valid}
-    {
-        if (m_valid)
-            new (&m_value) T(other.m_value);
-    }
-
-    Optional(Optional&& other)
-        noexcept(noexcept(new (nullptr) T(move(other.m_value))))
-        : m_valid{other.m_valid}
-    {
-        if (m_valid)
-            new (&m_value) T(move(other.m_value));
-    }
-
-    Optional& operator=(const Optional& other)
-    {
-        destruct_ifn();
-        if ((m_valid = other.m_valid))
-            new (&m_value) T(other.m_value);
-        return *this;
-    }
-
-    Optional& operator=(Optional&& other)
-    {
-        destruct_ifn();
-        if ((m_valid = other.m_valid))
-            new (&m_value) T(move(other.m_value));
-        return *this;
-    }
-
-    ~Optional() { destruct_ifn(); }
-
-    constexpr explicit operator bool() const noexcept { return m_valid; }
-
-    bool operator==(const Optional& other) const
-    {
-        return m_valid == other.m_valid and
-               (not m_valid or m_value == other.m_value);
-    }
-
-    bool operator!=(const Optional& other) const { return !(*this == other); }
-
-    template<typename... Args>
-    void emplace(Args&&... args)
-    {
-        destruct_ifn();
-        new (&m_value) T{forward<Args>(args)...};
-        m_valid = true;
-    }
-
-    T& operator*() { return m_value; }
-    const T& operator*() const { return *const_cast<Optional&>(*this); }
-
-    T* operator->() { return &m_value; }
-    const T* operator->() const { return const_cast<Optional&>(*this).operator->(); }
-
-    template<typename U>
-    T value_or(U&& fallback) const { return m_valid ? m_value : T{forward<U>(fallback)}; }
-
-    void reset() { destruct_ifn(); m_valid = false; }
-
-private:
-    void destruct_ifn() { if (m_valid) m_value.~T(); }
-
-    struct Empty {};
-    union
-    {
-        Empty m_empty; // disable default construction of value
-        T m_value;
-    };
-    bool m_valid;
-};
-
 u64 size_to_number(const std::string& s) {
-    static const regex r("(\\d+)(([KkMmGg])B?)?");
-    smatch match;
-    regex_match(s, match, r);
-    if (match.empty())
-        throw invalid_argument{"Invalid size"};
-    u64 res = stoull(match.str(1));
-    if (match.length(2) != 0) {
-        static const map<char, u64> t = {
-            {'K', 1024},
-            {'M', 1024*1024},
-            {'G', 1024*1024*1024},
-        };
-        res *= t.at(toupper(match.str(3)[0]));
+    int bits = false;
+    int mult = 1;
+    enum {
+        Num,
+        NumOrUnitOrBit,
+        Bit,
+        Nothing,
+    } expects = Num;
+    std::string numPart;
+    for (size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        if (expects == Num) {
+            if (c < '0' or c > '9')
+                throw std::runtime_error{"Not a number"};
+            expects = NumOrUnitOrBit;
+        } else if (expects == NumOrUnitOrBit) {
+            auto readUnit = [&](int val){
+                mult = val;
+                expects = Bit;
+                numPart = s.substr(0, i);
+            };
+            if (c >= '0' and c <= '9')
+                {}
+            else if (c == 'k' or c == 'K')
+                readUnit(1024);
+            else if (c == 'm' or c == 'M')
+                readUnit(1024 * 1024);
+            else if (c == 'g' or c == 'G')
+                readUnit(1024 * 1024 * 1024);
+            else if (c == 'b' or c == 'B') {
+                bits = c == 'b';
+                expects = Nothing;
+            } else {
+                throw std::runtime_error{"Not a number or unit"};
+            }
+        } else if (expects == Bit) {
+            bits = c == 'b';
+            expects = Nothing;
+        } else if (expects == Nothing) {
+            throw std::runtime_error{"Unexpected character"};
+        }
     }
-    return res;
+    if (numPart.empty())
+        numPart = s;
+    u64 num = stoull(numPart);
+    if (bits)
+        return num * mult / 8;
+    else
+        return num * mult;
 }
 
 template<typename T>
@@ -247,7 +199,7 @@ T read_from_fd(int fd) {
         size_t already_read = 0;
         while (left_to_read > 0) {
             auto just_read = read(fd, &data[old_size + already_read], left_to_read);
-            if (just_read < 0 || (size_t)just_read > left_to_read)
+            if (just_read < 0 or (size_t)just_read > left_to_read)
                 throw runtime_error{"I/O error"};
             else if (just_read == 0) {
                 data.resize(old_size + already_read);
@@ -323,7 +275,7 @@ Hash hash_password(string& password, const string& salt, u64 iterations, u64 wor
     return hash;
 }
 
-vector<u8> encrypt(vector<u8> input, const Optional<u64>& pad_to, const Hash& hash) {
+vector<u8> encrypt(vector<u8> input, const std::optional<u64>& pad_to, const Hash& hash) {
     if (pad_to and *pad_to < input.size())
         throw invalid_argument{"Padded length is smaller than input"};
     u64 real_length = input.size();
@@ -405,12 +357,12 @@ struct Args {
     bool base64 = false;
     bool interactive = true;
     bool confirm = true;
-    Optional<u64> iterations;
-    Optional<u64> work_area_size;
-    Optional<string> password;
-    Optional<Hash> hash;
-    Optional<string> salt;
-    Optional<u64> padded_length;
+    std::optional<u64> iterations;
+    std::optional<u64> work_area_size;
+    std::optional<string> password;
+    std::optional<Hash> hash;
+    std::optional<string> salt;
+    std::optional<u64> padded_length;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -425,7 +377,7 @@ Args parse_args(int argc, char** argv) {
         return args;
     }
     const auto is_prefix = [](const string& pre, const string& s) {
-        return pre.size() <= s.size() && equal(pre.begin(), pre.end(), s.begin());
+        return pre.size() <= s.size() and equal(pre.begin(), pre.end(), s.begin());
     };
     if (is_prefix(op, "encrypt"))
         args.operation = Args::Operation::Encrypt;
