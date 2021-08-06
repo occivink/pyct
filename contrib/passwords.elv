@@ -110,7 +110,7 @@ try {
         var hash = (./pyct hash --no-confirm)
         if (eq $pass '') {
             set pass = (try { cat /dev/urandom | tr -dc 'A-Za-z0-9-+_' | head -c$length } except _ { })
-            if (not-eq (count $pass) $length) { fail unknown }
+            if (!= (count $pass) $length) { fail unknown }
             set pass = $pass$append
         }
 
