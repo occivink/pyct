@@ -5,8 +5,8 @@ use str
 
 try {
     var i = 0
-    var has-arg = []{ < $i (count $args) }
-    var next-arg = []{ put $args[$i]; set i = (+ $i 1) }
+    var has-arg = {|| < $i (count $args) }
+    var next-arg = {|| put $args[$i]; set i = (+ $i 1) }
 
     var mode = ''
     var passwords-file = ~/.config/passwords
@@ -30,7 +30,7 @@ try {
 
     if (eq $mode list) {
         while ($has-arg) {
-            set arg = ($next-arg)
+            var arg = ($next-arg)
             if (has-value [-h --help] $arg) {
                  fail help-list
             } else {
@@ -39,7 +39,7 @@ try {
         }
         var is-key = $true
         try {
-            ./pyct decrypt -b < $passwords-file 2>/dev/null | each [line]{
+            ./pyct decrypt -b < $passwords-file 2>/dev/null | each {|line|
                  if $is-key { echo $line }
                  set is-key = (not $is-key)
             }
@@ -63,15 +63,15 @@ try {
 
         var match = (if $fuzzy {
              var fuzzed = (put '' (all $name) '' | str:join '.*')
-             put [arg]{ re:match $fuzzed $arg }
+             put {|arg| re:match $fuzzed $arg }
         } else {
-             put [arg]{ eq $arg $name }
+             put {|arg| eq $arg $name }
         })
 
         var is-name = $true
         var print = $false
         try {
-            ./pyct decrypt -b < $passwords-file 2>/dev/null | each [line]{
+            ./pyct decrypt -b < $passwords-file 2>/dev/null | each {|line|
                 if $print { print $line; break }
                 set print = (and $is-name ($match $line))
                 set is-name = (not $is-name)
@@ -85,7 +85,7 @@ try {
         var append = ''
         var print = $false
         while ($has-arg) {
-            set arg = ($next-arg)
+            var arg = ($next-arg)
             if (has-value [-l --length] $arg) {
                  if (not ($has-arg)) { fail missing-arg }
                  set length = ($next-arg)
@@ -125,7 +125,7 @@ try {
                     set dec = (./pyct decrypt -b --hash-fd 3 < $passwords-file 3< $p 2>/dev/null | slurp)
                 } except _ { fail password } finally { prclose $p }
             }
-            str:split "\n" $dec | each [line]{
+            str:split "\n" $dec | each {|line|
                 if (eq $name $line) { fail generate-exists }
             }
         }
