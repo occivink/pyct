@@ -2,6 +2,7 @@
 
 use re
 use str
+use file
 
 try {
     var i = 0
@@ -43,7 +44,7 @@ try {
                  if $is-key { echo $line }
                  set is-key = (not $is-key)
             }
-        } except _ { fail password }
+        } catch _ { fail password }
     } elif (eq $mode show) {
         var name = ''
         var fuzzy = $false
@@ -76,7 +77,7 @@ try {
                 set print = (and $is-name ($match $line))
                 set is-name = (not $is-name)
             }
-        } except _ { fail password }
+        } catch _ { fail password }
         if (not $print) { fail nomatch }
     } elif (eq $mode generate) {
         var name = ''
@@ -109,34 +110,38 @@ try {
 
         var hash = (./pyct hash --no-confirm)
         if (eq $pass '') {
-            set pass = (try { cat /dev/urandom | tr -dc 'A-Za-z0-9-+_' | head -c$length } except _ { })
+            set pass = (try { cat /dev/urandom | tr -dc 'A-Za-z0-9-+_' | head -c$length } catch _ { })
             if (!= (count $pass) $length) { fail unknown }
             set pass = $pass$append
         }
 
         var dec = ''
         if ?(test -f $passwords-file) {
-            var p = (pipe)
+            var pipe = (file:pipe)
             run-parallel {
-                print $hash > $p
-                pwclose $p
+                print $hash > $pipe[w]
+                file:close $pipe[w]
             } {
                 try {
-                    set dec = (./pyct decrypt -b --hash-fd 3 < $passwords-file 3< $p 2>/dev/null | slurp)
-                } except _ { fail password } finally { prclose $p }
+                    set dec = (./pyct decrypt -b --hash-fd 3 < $passwords-file 3< $pipe[r] 2>/dev/null | slurp)
+                } catch _ {
+                    fail password
+                } finally {
+                    file:close $pipe[r]
+                }
             }
             str:split "\n" $dec | each {|line|
                 if (eq $name $line) { fail generate-exists }
             }
         }
 
-        var p = (pipe)
+        var pipe = (file:pipe)
         run-parallel {
-            print $hash > $p
-            pwclose $p
+            print $hash > $pipe[w]
+            file:close $pipe[w]
         } {
-            print $dec$name"\n"$pass"\n" | ./pyct encrypt -b --hash-fd 3 3< $p > $passwords-file
-            prclose $p
+            print $dec$name"\n"$pass"\n" | ./pyct encrypt -b --hash-fd 3 3< $pipe[r] > $passwords-file
+            file:close $pipe[r]
         }
         if $print { print $pass }
     }
