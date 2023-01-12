@@ -145,7 +145,7 @@ try {
         }
         if $print { print $pass }
     }
-} except e {
+} catch e {
     var reason = $e[reason][content]
     if (eq $reason help) {
         echo "Pyct-based password manager"
@@ -194,7 +194,7 @@ try {
             &nomatch="No matching entry found"
             &password="Incorrect password"
         ]
-        try { echo $friendly-message[$reason] } except _ { echo "Unknown error" }
+        try { echo $friendly-message[$reason] } catch _ { echo "Unknown error" }
         exit 1
     }
 }
