@@ -92,7 +92,7 @@ string to_base_64(const T& bytes)
     static const array<char, 64> table = {
         'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
         'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
-        '0','1','2','3','4','5','6','7','8','9','+','-'
+        '0','1','2','3','4','5','6','7','8','9','+','-',
     };
     string ret;
     auto s = bytes.size();
@@ -141,7 +141,7 @@ vector<u8> from_base_64(string b64)
         64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,
         64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,
         64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,
-        64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64
+        64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,
     };
     b64.erase(remove_if(b64.begin(), b64.end(), [](char c) { return c == '\n' or c == ' '; }), b64.end());
     if (b64.size() % 4 != 0)
@@ -357,6 +357,7 @@ struct Args {
     bool base64 = false;
     bool interactive = true;
     bool confirm = true;
+    int input_data_fd = 0;
     std::optional<u64> iterations;
     std::optional<u64> work_area_size;
     std::optional<string> password;
@@ -422,6 +423,9 @@ Args parse_args(int argc, char** argv) {
         } else if (arg == "--pass-fd") {
             auto fd = stoi(option_value(++i));
             args.password = read_from_fd<string>(fd);
+        } else if (arg == "--input-data-fd") {
+            auto fd = stoi(option_value(++i));
+            args.input_data_fd = fd;
         } else if (arg == "-s" or arg == "--salt") {
             args.salt = option_value(++i);
             if (args.salt->size() < 8)
@@ -450,13 +454,14 @@ void print_help() {
     cerr << "    hash       Prints the hashed password, for use with later invocations of pyct\n";
     cerr << "\n";
     cerr << "OPTIONS [generic]:\n";
+    cerr << "        --input-data-fd <FD>        File descriptor from which to read the input data (0 by default)\n";
     cerr << "    -b, --base-64                   When encrypting, produce base64 output\n";
     cerr << "                                    When decrypting, assumes that the input is base64\n";
     cerr << "    -l, --padded-length <LENGTH>    Pad the input data to be LENGTH bytes long. Only when encrypting\n";
     cerr << "        --hash-fd <FD>              File descriptor from which to read the hash\n";
     cerr << "        --non-interactive           Do not prompt for password\n";
     cerr << "                                    Will abort if --pass-fd or --hash-fd is not specified\n";
-    cerr << "        --no-confirm                Do not confirm password input\n";
+    cerr << "        --no-confirm                Do not confirm password input when encrypting\n";
     cerr << "    -h, --help                      Print this help message\n";
     cerr << "OPTIONS [password hashing]:\n";
     cerr << "    -s, --salt <SALT>               Use SALT for password hashing. Must be at least 8 characters\n";
@@ -490,7 +495,7 @@ int main(int argc, char** argv) {
 
         if (args.operation == Args::Operation::Encrypt) {
             const auto hash = get_hash(args.confirm);
-            auto input = read_from_fd<vector<u8>>(0);
+            auto input = read_from_fd<vector<u8>>(args.input_data_fd);
             const auto encrypted = encrypt(move(input), args.padded_length, hash);
             if (args.base64) {
                 cout << to_base_64(encrypted) << endl;
@@ -499,7 +504,9 @@ int main(int argc, char** argv) {
             }
         } else if (args.operation == Args::Operation::Decrypt) {
             const auto hash = get_hash(false);
-            auto input = args.base64 ? from_base_64(read_from_fd<string>(0)) : read_from_fd<vector<u8>>(0);
+            vector<u8> input = args.base64 ?
+                from_base_64(read_from_fd<string>(args.input_data_fd)) :
+                read_from_fd<vector<u8>>(args.input_data_fd);
             const auto decrypted = decrypt(move(input), hash);
             copy_n(reinterpret_cast<const u8*>(decrypted.data()), decrypted.size(), ostreambuf_iterator<char>(cout));
         } else if (args.operation == Args::Operation::Hash) {
